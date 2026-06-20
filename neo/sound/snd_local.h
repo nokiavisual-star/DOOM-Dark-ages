@@ -128,6 +128,7 @@ public:
 
 typedef idSoundSample_XAudio2 idSoundSample_Stub;
 typedef idSoundVoice_XAudio2 idSoundVoice_Stub;
+typedef idSoundVoice_XAudio2 idSoundVoice;
 #endif
 
 
