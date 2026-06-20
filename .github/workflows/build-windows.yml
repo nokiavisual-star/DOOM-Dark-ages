@@ -17,7 +17,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # ВАЖНО: используем секрет HF_TOKEN или ваш Personal Access Token для обхода защиты пуша
+          token: ${{ secrets.GITHUB_TOKEN }} 
 
       - name: Install MinGW-w64 cross-compiler
         run: |
@@ -26,7 +27,8 @@ jobs:
             mingw-w64 \
             cmake \
             make \
-            zip 2>/dev/null
+            zip \
+            jq 2>/dev/null
 
       - name: Configure CMake
         run: |
@@ -49,77 +51,73 @@ jobs:
           make -j$(nproc) 2>&1 | tee build_output.log
           exit_code=${PIPESTATUS[0]}
           echo "BUILD_EXIT_CODE=$exit_code" >> $GITHUB_ENV
-          exit $exit_code
+          if [ $exit_code -ne 0 ]; then
+            exit 1
+          fi
 
-      - name: 🔥 Fix errors with DeepSeek AI
+      - name: 🔥 Fix errors with Qwen AI (Hugging Face)
         if: failure()
-        id: deepseek
+        id: ai_fix
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          echo "🔍 DeepSeek AI анализирует ошибку сборки..."
+          echo "🔍 ИИ анализирует ошибку сборки C++..."
           
-          # Получаем лог ошибки
-          ERROR_LOG=$(cat build_win64/build_output.log | grep -E "error:|fatal error" | head -20)
+          # Берем последние 30 строк лога ошибки
+          ERROR_LOG=$(tail -n 30 build_win64/build_output.log)
           
-          # Отправляем в DeepSeek
-          RESPONSE=$(curl -s https://api.deepseek.com/v1/chat/completions \
+          # Безопасно кодируем текст ошибки в JSON формат, чтобы кавычки не ломали curl
+          JSON_SAFE_LOG=$(echo "$ERROR_LOG" | jq -aR .)
+          
+          # Формируем запрос к бесплатной модели Qwen
+          PROMPT="У меня упала компиляция C++ (код DOOM 3 BFG). Вот лог ошибки: $JSON_SAFE_LOG. Файл: neo/renderer/Model.cpp. Исправь пути инклудов, используй ../idlib/DemoFile.h вместо idlib/DemoFile.h. Верни ТОЛЬКО чистый исправленный код всего файла целиком внутри блока \`\`\`cpp ... \`\`\`."
+          
+          # Делаем запрос к бесплатному API Hugging Face
+          RESPONSE=$(curl -s https://huggingface.co \
+            -H "Authorization: Bearer $HF_TOKEN" \
             -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.DEEPSEEK_API_KEY }}" \
-            -d '{
-              "model": "deepseek-chat",
-              "messages": [
-                {
-                  "role": "system",
-                  "content": "You are an expert C++ developer fixing compilation errors. Given the error, provide the full corrected file content with proper includes. The DOOM 3 BFG source uses paths like ../idlib/DemoFile.h. Return ONLY the fixed content."
-                },
-                {
-                  "role": "user",
-                  "content": "Fix this error:\n\n'"$ERROR_LOG"'\n\nFile: neo/renderer/Model.cpp\n\nFix the include path for idlib/DemoFile.h. Use ../idlib/DemoFile.h instead of idlib/DemoFile.h."
-                }
-              ]
-            }')
+            -d "{\"inputs\": \"$PROMPT\", \"parameters\": {\"max_new_tokens\": 2000}}")
           
-          echo "$RESPONSE" > deepseek_response.json
+          # Извлекаем текст ответа ИИ
+          AI_TEXT=$(echo "$RESPONSE" | jq -r '.[0].generated_text // .generated_text // empty')
           
-          # Извлекаем код
-          FIXED_CODE=$(echo "$RESPONSE" | jq -r '.choices[0].message.content' | sed -n '/```/,/```/p' | sed '1d;$d')
+          # Вырезаем из ответа только код C++
+          FIXED_CODE=$(echo "$AI_TEXT" | sed -n '/```cpp/,/```/p' | sed '1d;$d')
           
-          if [ -n "$FIXED_CODE" ]; then
-            echo "✅ DeepSeek сгенерировал исправление!"
+          if [ -n "$FIXED_CODE" ] && [ "$FIXED_CODE" != "null" ]; then
+            echo "✅ ИИ сгенерировал исправление!"
             echo "$FIXED_CODE" > fixed_code.txt
             echo "FIX_APPLIED=true" >> $GITHUB_ENV
           else
-            echo "❌ DeepSeek не выдал код. Применяем стандартный фикс..."
-            # Ручной фикс
+            echo "❌ ИИ не выдал чистый код. Применяем стандартный ручной фикс..."
             sed -i 's|#include "idlib/DemoFile.h"|#include "../idlib/DemoFile.h"|g' neo/renderer/Model.cpp
-            echo "✅ Применён ручной фикс: ../idlib/DemoFile.h"
+            echo "✅ Применён ручной фикс пути"
             echo "FIX_APPLIED=true" >> $GITHUB_ENV
           fi
 
       - name: 📤 Apply fixes and commit
         if: failure() && env.FIX_APPLIED == 'true'
         run: |
-          git config user.name "DeepSeek AI Bot"
-          git config user.email "deepseek-bot@github.com"
+          git config user.name "Qwen AI Bot"
+          git config user.email "qwen-bot@github.com"
           
-          # Добавляем фикс в модель
           if [ -f "fixed_code.txt" ]; then
-            # Восстанавливаем полный файл из ответа DeepSeek
             cp fixed_code.txt neo/renderer/Model.cpp
-            echo "✅ Применён фикс от DeepSeek"
+            echo "✅ Применён полный файл от ИИ"
           else
-            # Используем стандартный фикс
-            sed -i 's|#include "idlib/DemoFile.h"|#include "../idlib/DemoFile.h"|g' neo/renderer/Model.cpp
-            echo "✅ Применён стандартный фикс"
+            echo "⚠️ Используется ручной селективный фикс"
           fi
           
           git add neo/renderer/Model.cpp
-          git commit -m "🤖 DeepSeek AI: Fixed Model.cpp include path" || echo "Nothing to commit"
-          git push https://${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }}
+          git commit -m "🤖 AI Fix: Fixed Model.cpp include paths" || echo "Нечего коммитить"
+          
+          # Пушим обратно в ту же ветку
+          git push origin HEAD:${{ github.ref_name }}
 
       - name: 🔄 Re-run build after fixes
         if: failure() && env.FIX_APPLIED == 'true'
         run: |
-          echo "🔄 Перезапускаем сборку с исправлениями..."
+          echo "🔄 Перезапускаем сборку с примененными исправлениями..."
           cd build_win64
           make clean
           cmake .. \
@@ -132,26 +130,34 @@ jobs:
           make -j$(nproc)
 
       - name: Package portable build
-        if: success() || (failure() && env.FIX_APPLIED == 'false')
+        if: always() # Упаковываем, если в итоге сборка прошла успешно
         run: |
-          mkdir -p DOOM_Dark_Ages_Portable/darkages
-          mkdir -p DOOM_Dark_Ages_Portable/base
+          if [ -f "build_win64/DarkAges.exe" ]; then
+            mkdir -p DOOM_Dark_Ages_Portable/darkages
+            mkdir -p DOOM_Dark_Ages_Portable/base
 
-          cp build_win64/DarkAges.exe DOOM_Dark_Ages_Portable/ || echo "EXE not found!"
+            cp build_win64/DarkAges.exe DOOM_Dark_Ages_Portable/
 
-          for dir in cfg def fx maps materials particles renderprogs scripts strings; do
-            if [ -d "darkages/$dir" ]; then
-              cp -r "darkages/$dir" "DOOM_Dark_Ages_Portable/darkages/"
+            for dir in cfg def fx maps materials particles renderprogs scripts strings; do
+              if [ -d "darkages/$dir" ]; then
+                cp -r "darkages/$dir" "DOOM_Dark_Ages_Portable/darkages/"
+              fi
+            done
+
+            cp darkages/icon/darkages.ico DOOM_Dark_Ages_Portable/ 2>/dev/null || true
+
+            if [ -d "base/renderprogs" ]; then
+              cp -r base/renderprogs DOOM_Dark_Ages_Portable/base/
             fi
-          done
-
-          cp darkages/icon/darkages.ico DOOM_Dark_Ages_Portable/ 2>/dev/null || true
-
-          if [ -d "base/renderprogs" ]; then
-            cp -r base/renderprogs DOOM_Dark_Ages_Portable/base/
+            
+            echo "ZIP_READY=true" >> $GITHUB_ENV
+          else
+            echo "❌ Сборка не удалась даже после фиксов, EXE отсутствует."
+            exit 1
           fi
 
       - name: Upload artifact
+        if: env.ZIP_READY == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: DOOM-The-Dark-Ages-Portable-Windows-x64
@@ -159,27 +165,13 @@ jobs:
           retention-days: 30
 
       - name: Create Release (on tag push)
-        if: startsWith(github.ref, 'refs/tags/v') && success()
+        if: startsWith(github.ref, 'refs/tags/v') && env.ZIP_READY == 'true'
         uses: softprops/action-gh-release@v1
         with:
           files: DOOM_The_Dark_Ages_Portable.zip
           name: "DOOM: The Dark Ages ${{ github.ref_name }}"
           body: |
             ## DOOM: The Dark Ages - Portable Windows Build
-
-            🔧 **Автоматически собрано с DeepSeek AI**
-
-            ### Contents
-            - `DarkAges.exe` - Standalone portable executable
-            - `darkages/` - Game data files
-            - `base/renderprogs/` - Render programs
-
-            ### How to run
-            1. Extract the ZIP
-            2. Run `DarkAges.exe`
-
-            ### Requirements
-            - Windows 7/8/10/11 (x64)
-            - No installation needed
+            🔧 **Автоматически исправлено и собрано с помощью ИИ**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
