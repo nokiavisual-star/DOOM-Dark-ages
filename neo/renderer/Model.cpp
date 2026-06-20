@@ -27,6 +27,7 @@ If you have questions concerning this license or the applicable additional terms
 */
 
 #pragma hdrstop
+#include "idlib/DemoFile.h"
 #include "../idlib/precompiled.h"
 
 
