@@ -156,7 +156,11 @@ ID_INLINE_EXTERN int CACHE_LINE_CLEAR_OVERFLOW_COUNT( int size ) {
 #endif
 
 // make the intrinsics "type unsafe"
+#ifdef _MSC_VER
 typedef union __declspec(intrin_type) _CRT_ALIGN(16) __m128c {
+#else
+typedef union __attribute__((aligned(16))) __m128c {
+#endif
 				__m128c() {}
 				__m128c( __m128 f ) { m128 = f; }
 				__m128c( __m128i i ) { m128i = i; }

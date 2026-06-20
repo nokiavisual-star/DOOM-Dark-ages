@@ -92,7 +92,42 @@ typedef enum {
 #include "XAudio2/XA2_SoundVoice.h"
 #include "XAudio2/XA2_SoundHardware.h"
 #else
-// MinGW stub - XAudio2 not available, sound will use OpenAL fallback
+// MinGW stub - XAudio2 not available
+class idSoundSample_XAudio2 {
+public:
+	idSoundSample_XAudio2() {}
+	virtual void LoadResource() {}
+	void SetName( const char * n ) { (void)n; }
+	const char * GetName() const { return ""; }
+};
+
+class idSoundVoice_XAudio2 : public idSoundVoice_Base {
+public:
+	idSoundVoice_XAudio2() {}
+	~idSoundVoice_XAudio2() {}
+	void Create( const idSoundSample * leadinSample, const idSoundSample * loopingSample ) { (void)leadinSample; (void)loopingSample; }
+	void Start( int offsetMS, int ssFlags ) { (void)offsetMS; (void)ssFlags; }
+	void Stop() {}
+	void Pause() {}
+	void UnPause() {}
+	bool IsPlaying() { return false; }
+};
+
+class idSoundHardware {
+public:
+	idSoundHardware() {}
+	void Init() {}
+	void Shutdown() {}
+	void Update() {}
+	idSoundVoice * AllocateVoice( const idSoundSample * leadinSample, const idSoundSample * loopingSample ) { (void)leadinSample; (void)loopingSample; return NULL; }
+	void FreeVoice( idSoundVoice * voice ) { (void)voice; }
+	void * GetIXAudio2() const { return NULL; }
+	int GetNumZombieVoices() const { return 0; }
+	int GetNumFreeVoices() const { return 0; }
+};
+
+typedef idSoundSample_XAudio2 idSoundSample_Stub;
+typedef idSoundVoice_XAudio2 idSoundVoice_Stub;
 #endif
 
 

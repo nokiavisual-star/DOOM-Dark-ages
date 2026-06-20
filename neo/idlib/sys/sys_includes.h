@@ -42,7 +42,6 @@ If you have questions concerning this license or the applicable additional terms
 #define _ATL_CSTRING_EXPLICIT_CONSTRUCTORS	// prevent auto literal to string conversion
 
 #ifndef _D3SDK
-#ifndef GAME_DLL
 
 #define WINVER				0x501
 
@@ -56,7 +55,6 @@ If you have questions concerning this license or the applicable additional terms
 #include <dsound.h>
 #include <dinput.h>
 
-#endif /* !GAME_DLL */
 #endif /* !_D3SDK */
 
 #ifdef _MSC_VER

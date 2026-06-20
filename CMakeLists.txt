@@ -108,6 +108,10 @@ if(WIN32)
         ${NEO_DIR}/sys/win32/*.cpp
         ${NEO_DIR}/sys/win32/*.h
     )
+    # Exclude files requiring DirectX SDK headers not available in MinGW
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        list(FILTER SYS_SOURCES EXCLUDE REGEX "win_snd\\.cpp$")
+    endif()
     # Windows resource file with icon
     set(WIN_RC_FILE ${NEO_DIR}/sys/win32/darkages.rc)
 else()
