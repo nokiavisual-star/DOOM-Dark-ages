@@ -101,7 +101,7 @@ public:
 	const char * GetName() const { return ""; }
 };
 
-class idSoundVoice_XAudio2 : public idSoundVoice_Base {
+class idSoundVoice_XAudio2 {
 public:
 	idSoundVoice_XAudio2() {}
 	~idSoundVoice_XAudio2() {}
@@ -126,8 +126,7 @@ public:
 	int GetNumFreeVoices() const { return 0; }
 };
 
-typedef idSoundSample_XAudio2 idSoundSample_Stub;
-typedef idSoundVoice_XAudio2 idSoundVoice_Stub;
+typedef idSoundSample_XAudio2 idSoundSample;
 typedef idSoundVoice_XAudio2 idSoundVoice;
 #endif
 
