@@ -34,6 +34,9 @@ If you have questions concerning this license or the applicable additional terms
 #include "sys/sys_includes.h"
 #include "sys/sys_assert.h"
 #include "sys/sys_types.h"
+#if defined(__GNUC__) && defined(_WIN32)
+#include "sys/sys_mingw_compat.h"
+#endif
 #include "sys/sys_intrinsics.h"
 #include "sys/sys_threading.h"
 
