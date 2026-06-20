@@ -19,12 +19,12 @@ jobs:
 
       - name: Install MinGW-w64 cross-compiler
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
             mingw-w64 \
             cmake \
             make \
-            zip
+            zip 2>/dev/null
 
       - name: Configure CMake (cross-compile for Windows x64)
         run: |
@@ -36,37 +36,37 @@ jobs:
             -DDARKAGES_PORTABLE=ON \
             -DDARKAGES_OPTIMIZE_T460S=ON \
             -DUSE_OPENGL=OFF \
-            -DUSE_OPENAL=OFF
+            -DUSE_OPENAL=OFF \
+            2>&1 | grep -E "^(--|CMake (Error|Warning:))" || true
 
       - name: Build
         run: |
           cd build_win64
-          make -j$(nproc)
+          make -j$(nproc) 2>&1 | \
+            grep -E "^\[|error:|Error|undefined reference|fatal error" | \
+            grep -v "^$" || true
+          # Re-run to catch actual build failure exit code
+          make -j$(nproc) 2>/dev/null
 
       - name: Package portable build
         run: |
           mkdir -p DOOM_Dark_Ages_Portable/darkages
           mkdir -p DOOM_Dark_Ages_Portable/base
 
-          # Copy the executable
           cp build_win64/DarkAges.exe DOOM_Dark_Ages_Portable/
 
-          # Copy game data directories
           for dir in cfg def fx maps materials particles renderprogs scripts strings; do
             if [ -d "darkages/$dir" ]; then
               cp -r "darkages/$dir" "DOOM_Dark_Ages_Portable/darkages/"
             fi
           done
 
-          # Copy icon
           cp darkages/icon/darkages.ico DOOM_Dark_Ages_Portable/
 
-          # Copy render programs from base
           if [ -d "base/renderprogs" ]; then
             cp -r base/renderprogs DOOM_Dark_Ages_Portable/base/
           fi
 
-          # Show sizes
           echo "=== Package contents ==="
           du -sh DOOM_Dark_Ages_Portable/
           du -sh DOOM_Dark_Ages_Portable/* 2>/dev/null || true
