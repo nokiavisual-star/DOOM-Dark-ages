@@ -17,7 +17,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # ВАЖНО: используем секрет HF_TOKEN или ваш Personal Access Token для обхода защиты пуша
           token: ${{ secrets.GITHUB_TOKEN }} 
 
       - name: Install MinGW-w64 cross-compiler
@@ -34,6 +33,7 @@ jobs:
         run: |
           mkdir -p build_win64
           cd build_win64
+          # Флаг -w отключает все предупреждения на этапе проверки CMake
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE=../cmake/Toolchain-Windows-x86_64.cmake \
             -DCMAKE_BUILD_TYPE=Release \
@@ -41,6 +41,8 @@ jobs:
             -DDARKAGES_OPTIMIZE_T460S=ON \
             -DUSE_OPENGL=OFF \
             -DUSE_OPENAL=OFF \
+            -DCMAKE_CXX_FLAGS="-w" \
+            -DCMAKE_C_FLAGS="-w" \
             2>&1 | tee cmake_output.log || true
 
       - name: Build
@@ -48,76 +50,76 @@ jobs:
         continue-on-error: true
         run: |
           cd build_win64
-          make -j$(nproc) 2>&1 | tee build_output.log
-          exit_code=${PIPESTATUS[0]}
+          # Передаем флаг сборщику, чтобы g++ компилировал без варнингов
+          make -j$(nproc) CXXFLAGS="-w" CFLAGS="-w" 2>&1 | tee build_output.log
+          exit_code=${PIPESTATUS}
           echo "BUILD_EXIT_CODE=$exit_code" >> $GITHUB_ENV
           if [ $exit_code -ne 0 ]; then
             exit 1
           fi
 
       - name: 🔥 Fix errors with Qwen AI (Hugging Face)
-        if: failure()
+        if: ${{ failure() && steps.build.outcome == 'failure' }}
         id: ai_fix
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          echo "🔍 ИИ анализирует ошибку сборки C++..."
+          echo "🔍 ИИ анализирует чистую ошибку сборки C++ (без варнингов)..."
           
-          # Берем последние 30 строк лога ошибки
+          if [ ! -f "build_win64/build_output.log" ]; then
+            echo "❌ Лог сборки не найден."
+            exit 0
+          fi
+          
+          # Лог теперь чистый, берутся только чистые ошибки
           ERROR_LOG=$(tail -n 30 build_win64/build_output.log)
           
-          # Безопасно кодируем текст ошибки в JSON формат, чтобы кавычки не ломали curl
           JSON_SAFE_LOG=$(echo "$ERROR_LOG" | jq -aR .)
           
-          # Формируем запрос к бесплатной модели Qwen
           PROMPT="У меня упала компиляция C++ (код DOOM 3 BFG). Вот лог ошибки: $JSON_SAFE_LOG. Файл: neo/renderer/Model.cpp. Исправь пути инклудов, используй ../idlib/DemoFile.h вместо idlib/DemoFile.h. Верни ТОЛЬКО чистый исправленный код всего файла целиком внутри блока \`\`\`cpp ... \`\`\`."
           
-          # Делаем запрос к бесплатному API Hugging Face
           RESPONSE=$(curl -s https://huggingface.co \
             -H "Authorization: Bearer $HF_TOKEN" \
             -H "Content-Type: application/json" \
             -d "{\"inputs\": \"$PROMPT\", \"parameters\": {\"max_new_tokens\": 2000}}")
           
-          # Извлекаем текст ответа ИИ
-          AI_TEXT=$(echo "$RESPONSE" | jq -r '.[0].generated_text // .generated_text // empty')
+          AI_TEXT=$(echo "$RESPONSE" | jq -r '..generated_text // .generated_text // empty')
           
-          # Вырезаем из ответа только код C++
           FIXED_CODE=$(echo "$AI_TEXT" | sed -n '/```cpp/,/```/p' | sed '1d;$d')
           
           if [ -n "$FIXED_CODE" ] && [ "$FIXED_CODE" != "null" ]; then
-            echo "✅ ИИ сгенерировал исправление!"
+            echo "✅ ИИ успешно сгенерировал исправленный код!"
             echo "$FIXED_CODE" > fixed_code.txt
             echo "FIX_APPLIED=true" >> $GITHUB_ENV
           else
-            echo "❌ ИИ не выдал чистый код. Применяем стандартный ручной фикс..."
+            echo "❌ ИИ вернул пустой ответ. Применяем ручной резервный фикс..."
             sed -i 's|#include "idlib/DemoFile.h"|#include "../idlib/DemoFile.h"|g' neo/renderer/Model.cpp
-            echo "✅ Применён ручной фикс пути"
+            echo "✅ Применён резервный фикс путей инклудов"
             echo "FIX_APPLIED=true" >> $GITHUB_ENV
           fi
 
       - name: 📤 Apply fixes and commit
-        if: failure() && env.FIX_APPLIED == 'true'
+        if: ${{ failure() && steps.build.outcome == 'failure' && env.FIX_APPLIED == 'true' }}
         run: |
           git config user.name "Qwen AI Bot"
           git config user.email "qwen-bot@github.com"
           
           if [ -f "fixed_code.txt" ]; then
             cp fixed_code.txt neo/renderer/Model.cpp
-            echo "✅ Применён полный файл от ИИ"
+            echo "✅ Применён полный обновленный файл от ИИ"
           else
-            echo "⚠️ Используется ручной селективный фикс"
+            echo "⚠️ Полный файл от ИИ отсутствует, применен резервный селективный фикс"
           fi
           
           git add neo/renderer/Model.cpp
-          git commit -m "🤖 AI Fix: Fixed Model.cpp include paths" || echo "Нечего коммитить"
+          git commit -m "🤖 AI Fix: Fixed Model.cpp include paths" || echo "Изменений для коммита не обнаружено"
           
-          # Пушим обратно в ту же ветку
           git push origin HEAD:${{ github.ref_name }}
 
       - name: 🔄 Re-run build after fixes
-        if: failure() && env.FIX_APPLIED == 'true'
+        if: ${{ failure() && steps.build.outcome == 'failure' && env.FIX_APPLIED == 'true' }}
         run: |
-          echo "🔄 Перезапускаем сборку с примененными исправлениями..."
+          echo "🔄 Перезапускаем сборку без варнингов с исправлениями..."
           cd build_win64
           make clean
           cmake .. \
@@ -126,11 +128,13 @@ jobs:
             -DDARKAGES_PORTABLE=ON \
             -DDARKAGES_OPTIMIZE_T460S=ON \
             -DUSE_OPENGL=OFF \
-            -DUSE_OPENAL=OFF
-          make -j$(nproc)
+            -DUSE_OPENAL=OFF \
+            -DCMAKE_CXX_FLAGS="-w" \
+            -DCMAKE_C_FLAGS="-w"
+          make -j$(nproc) CXXFLAGS="-w" CFLAGS="-w"
 
       - name: Package portable build
-        if: always() # Упаковываем, если в итоге сборка прошла успешно
+        if: always()
         run: |
           if [ -f "build_win64/DarkAges.exe" ]; then
             mkdir -p DOOM_Dark_Ages_Portable/darkages
@@ -152,7 +156,7 @@ jobs:
             
             echo "ZIP_READY=true" >> $GITHUB_ENV
           else
-            echo "❌ Сборка не удалась даже после фиксов, EXE отсутствует."
+            echo "❌ Сборка не удалась даже после попытки исправления ИИ, EXE-файл отсутствует."
             exit 1
           fi
 
@@ -172,6 +176,6 @@ jobs:
           name: "DOOM: The Dark Ages ${{ github.ref_name }}"
           body: |
             ## DOOM: The Dark Ages - Portable Windows Build
-            🔧 **Автоматически исправлено и собрано с помощью ИИ**
+            🔧 **Автоматически исправлено нейросетью Qwen Coder без лишних варнингов**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
