@@ -108,11 +108,14 @@ if(WIN32)
         ${NEO_DIR}/sys/win32/*.cpp
         ${NEO_DIR}/sys/win32/*.h
     )
+    # Windows resource file with icon
+    set(WIN_RC_FILE ${NEO_DIR}/sys/win32/darkages.rc)
 else()
     file(GLOB SYS_SOURCES
         ${NEO_DIR}/sys/*.cpp
         ${NEO_DIR}/sys/*.h
     )
+    set(WIN_RC_FILE "")
 endif()
 
 # All sources
@@ -159,8 +162,21 @@ if(USE_OPENGL)
     add_definitions(-DUSE_OPENGL)
 endif()
 
-# Executable
-add_executable(DoomTheDarkAges ${ALL_SOURCES})
+# Executable - WIN32 flag creates a Windows GUI app (no console window)
+if(WIN32)
+    enable_language(RC)
+    add_executable(DoomTheDarkAges WIN32 ${ALL_SOURCES} ${WIN_RC_FILE})
+    set_target_properties(DoomTheDarkAges PROPERTIES
+        OUTPUT_NAME "DarkAges"
+        WIN32_EXECUTABLE TRUE
+        SUFFIX ".exe"
+    )
+else()
+    add_executable(DoomTheDarkAges ${ALL_SOURCES})
+    set_target_properties(DoomTheDarkAges PROPERTIES
+        OUTPUT_NAME "DarkAges"
+    )
+endif()
 
 if(USE_OPENGL)
     target_link_libraries(DoomTheDarkAges ${OPENGL_LIBRARIES})
@@ -197,10 +213,12 @@ endif()
 install(TARGETS DoomTheDarkAges DESTINATION .)
 install(DIRECTORY ${BASE_DIR}/ DESTINATION darkages)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/base/renderprogs DESTINATION darkages)
+install(FILES ${CMAKE_SOURCE_DIR}/darkages/icon/darkages.ico DESTINATION .)
 
 # Package settings for portable build
 set(CPACK_GENERATOR "ZIP")
 set(CPACK_PACKAGE_NAME "DoomTheDarkAges")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "DOOM: The Dark Ages - Medieval FPS")
+set(CPACK_PACKAGE_FILE_NAME "DOOM-The-Dark-Ages-v${PROJECT_VERSION}-Portable")
 include(CPack)
