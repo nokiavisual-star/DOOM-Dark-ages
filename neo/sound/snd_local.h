@@ -1,4 +1,3 @@
-/*
 ===========================================================================
 
 Doom 3 BFG Edition GPL Source Code
@@ -92,7 +91,8 @@ typedef enum {
 #include "XAudio2/XA2_SoundVoice.h"
 #include "XAudio2/XA2_SoundHardware.h"
 #else
-// MinGW stub - XAudio2 not available
+// MinGW/GCC stub - XAudio2 not available
+
 class idSoundSample_XAudio2 {
 public:
 	idSoundSample_XAudio2() {}
@@ -101,7 +101,13 @@ public:
 	const char * GetName() const { return ""; }
 };
 
-class idSoundVoice_XAudio2 {
+// idSoundSample is forward-declared in sound.h; define it here as a stub
+class idSoundSample : public idSoundSample_XAudio2 {
+public:
+	idSoundSample() {}
+};
+
+class idSoundVoice_XAudio2 : public idSoundVoice_Base {
 public:
 	idSoundVoice_XAudio2() {}
 	~idSoundVoice_XAudio2() {}
@@ -111,6 +117,12 @@ public:
 	void Pause() {}
 	void UnPause() {}
 	bool IsPlaying() { return false; }
+};
+
+// idSoundVoice must be defined before idSoundHardware uses it
+class idSoundVoice : public idSoundVoice_XAudio2 {
+public:
+	idSoundVoice() {}
 };
 
 class idSoundHardware {
@@ -126,8 +138,6 @@ public:
 	int GetNumFreeVoices() const { return 0; }
 };
 
-typedef idSoundSample_XAudio2 idSoundSample;
-typedef idSoundVoice_XAudio2 idSoundVoice;
 #endif
 
 
