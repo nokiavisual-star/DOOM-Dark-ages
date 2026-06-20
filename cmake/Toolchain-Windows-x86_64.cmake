@@ -25,5 +25,5 @@ add_definitions(-D_WIN32 -DWIN32 -D_WINDOWS)
 add_definitions(-DDARKAGES_BUILD)
 
 # MinGW compatibility flags
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive -Wno-unknown-pragmas -Wno-narrowing -Wno-sign-compare -Wno-write-strings -Wno-unused-variable -Wno-unused-but-set-variable -Wno-multichar")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-variable")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive -Wno-unknown-pragmas -Wno-narrowing -Wno-sign-compare -Wno-write-strings -Wno-unused-variable -Wno-unused-but-set-variable -Wno-multichar -Wno-deprecated-declarations -Wno-attributes")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-variable -Wno-deprecated-declarations -Wno-attributes")
